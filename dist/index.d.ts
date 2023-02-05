@@ -1,15 +1,9 @@
-import glob from 'glob';
-import { resolve } from 'path';
-import { hasFileExtension } from './utils';
-import { InvalidWriteFilesTypeError, NoIconsAvailableError } from './errors';
-import type { WebfontsGeneratorOptions, GeneratedFontTypes } from '@vusion/webfonts-generator';
+import _webfontGenerator, { GeneratedFontTypes } from '@vusion/webfonts-generator';
+import { Plugin } from 'vite';
 
-const { sync } = glob;
-
-const FILE_TYPE_OPTIONS = ['html', 'css', 'fonts'] as const;
+declare const FILE_TYPE_OPTIONS: readonly ["html", "css", "fonts"];
 type FileType = (typeof FILE_TYPE_OPTIONS)[number];
-
-export interface IconPluginOptions<T extends GeneratedFontTypes = GeneratedFontTypes> {
+interface IconPluginOptions<T extends GeneratedFontTypes = GeneratedFontTypes> {
     /** Context directory in which the SVG files will be read from */
     context: string;
     /**
@@ -106,7 +100,9 @@ export interface IconPluginOptions<T extends GeneratedFontTypes = GeneratedFontT
      * - woff - [ttf2woff](https://github.com/fontello/ttf2woff).
      * - eot - [ttf2eot](https://github.com/fontello/ttf2eot).
      */
-    formatOptions?: { [format in T]?: unknown };
+    formatOptions?: {
+        [format in T]?: unknown;
+    };
     /**
      * An array of globs, of the SVG files to add into the webfont
      * @default ['*.svg']
@@ -118,7 +114,9 @@ export interface IconPluginOptions<T extends GeneratedFontTypes = GeneratedFontT
      */
     types?: T | T[];
     /** Specific codepoints for certain icons. Icons without codepoints will have codepoints incremented from startCodepoint skipping duplicates. */
-    codepoints?: { [key: string]: number };
+    codepoints?: {
+        [key: string]: number;
+    };
     /** The outputted font height (defaults to the height of the highest input icon). */
     fontHeight?: number;
     /**
@@ -133,90 +131,17 @@ export interface IconPluginOptions<T extends GeneratedFontTypes = GeneratedFontT
     baseSelector?: string;
 }
 
-export function parseIconTypesOption<T extends GeneratedFontTypes = GeneratedFontTypes>({ types }: Pick<IconPluginOptions<T>, 'types'>): T[] {
-    if (Array.isArray(types)) {
-        return types;
-    }
-    if (types) {
-        return [types];
-    }
-    return ['eot', 'woff', 'woff2', 'ttf', 'svg'] as T[];
-}
+/**
+ * A Vite plugin that generates a webfont from your SVG icons.
+ *
+ * The plugin uses {@link https://github.com/vusion/webfonts-generator/ webfonts-generator} package to create fonts in any format.
+ * It also generates CSS files that allow using the icons directly in your HTML output, using CSS classes per-icon.
+ */
+declare function viteSvgToWebfont<T extends GeneratedFontTypes = GeneratedFontTypes>(options: IconPluginOptions<T>): Plugin;
 
-export function parseFiles({ files, context }: Pick<IconPluginOptions, 'files' | 'context'>) {
-    files ||= ['*.svg'];
-    const resolvedFiles = files.flatMap(fileGlob => sync(fileGlob, { cwd: context })).map(file => `${context}/${file}`);
-    if (!resolvedFiles.length) {
-        throw new NoIconsAvailableError('The specified file globs did not resolve any files in the context.');
-    }
-    return resolvedFiles;
-}
+/**
+ * Paths of default templates available for use.
+ */
+declare const templates: _webfontGenerator.Templates;
 
-export function resolveFileDest(globalDest: string, fileDest: string | undefined, fontName: string, extension: 'css' | 'html') {
-    if (!fileDest) {
-        return resolve(globalDest, `${fontName.toLowerCase()}.${extension}`);
-    }
-    if (hasFileExtension(fileDest)) {
-        return resolve(globalDest, fileDest);
-    }
-    return resolve(globalDest, fileDest, `${fontName.toLowerCase()}.${extension}`);
-}
-
-export function buildFileTypeList({ generateFiles }: Pick<IconPluginOptions, 'generateFiles'>): readonly FileType[] {
-    if (!generateFiles || typeof generateFiles === 'boolean') {
-        return generateFiles ? FILE_TYPE_OPTIONS : [];
-    }
-    if (!Array.isArray(generateFiles)) {
-        generateFiles = [generateFiles];
-    }
-    const invalidTypes = generateFiles.filter(type => !FILE_TYPE_OPTIONS.includes(type));
-    if (invalidTypes.length) {
-        throw new InvalidWriteFilesTypeError(invalidTypes);
-    }
-    return generateFiles;
-}
-
-export function parseGenerateFilesOption(options: Pick<IconPluginOptions, 'generateFiles'>) {
-    const fileTypes = new Set(buildFileTypeList(options));
-    return {
-        fonts: fileTypes.has('fonts'),
-        html: fileTypes.has('html'),
-        css: fileTypes.has('css'),
-    };
-}
-
-export function parseOptions<T extends GeneratedFontTypes = GeneratedFontTypes>(options: IconPluginOptions<T>) {
-    const formats = parseIconTypesOption<T>(options);
-    const files = parseFiles(options);
-    const generateFilesOptions = parseGenerateFilesOption(options);
-    options.dest ||= resolve(options.context, '..', 'artifacts');
-    options.fontName ||= 'iconfont';
-    return {
-        files,
-        types: formats,
-        order: formats,
-        fontName: options.fontName,
-        fontHeight: options.fontHeight || 1000, // Fixes conversion issues with small svgs,
-        codepoints: options.codepoints || {},
-        templateOptions: {
-            baseSelector: options.baseSelector || '.icon',
-            classPrefix: options.classPrefix ?? 'icon-',
-        },
-        html: generateFilesOptions.html,
-        css: generateFilesOptions.css,
-        ligature: options.ligature ?? true,
-        formatOptions: options.formatOptions || {},
-        dest: options.dest.endsWith('/') ? options.dest : `${options.dest}/`,
-        writeFiles: generateFilesOptions.fonts,
-        cssDest: resolveFileDest(options.dest, options.cssDest, options.fontName, 'css'),
-        htmlDest: resolveFileDest(options.dest, options.htmlDest, options.fontName, 'html'),
-        ...(options.cssTemplate && { cssTemplate: resolve(options.dest, options.cssTemplate) }),
-        ...(options.cssFontsUrl && { cssFontsUrl: options.cssFontsUrl }),
-        ...(options.htmlTemplate && { htmlTemplate: resolve(options.dest, options.htmlTemplate) }),
-        ...(typeof options.fixedWidth !== 'undefined' && { fixedWidth: options.fixedWidth }),
-        ...(typeof options.centerHorizontally !== 'undefined' && { centerHorizontally: options.centerHorizontally }),
-        ...(typeof options.normalize !== 'undefined' && { normalize: options.normalize }),
-        ...(typeof options.round !== 'undefined' && { round: options.round }),
-        ...(typeof options.descent !== 'undefined' && { descent: options.descent }),
-    } satisfies WebfontsGeneratorOptions<T>;
-}
+export { viteSvgToWebfont as default, templates, viteSvgToWebfont };
