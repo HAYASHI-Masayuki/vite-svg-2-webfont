@@ -101,6 +101,7 @@ export function viteSvgToWebfont<T extends GeneratedFontTypes = GeneratedFontTyp
                     const font = generatedFonts[fontType];
                     res.setHeader('content-type', MIME_TYPES[fontType]);
                     res.setHeader('content-length', font.length);
+                    res.setHeader('access-control-allow-origin', '*');
                     res.statusCode = 200;
                     return res.end(font);
                 });
